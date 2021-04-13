@@ -28,19 +28,20 @@ def access_secret_version(project_id, secret_id, version_id):
     # WARNING: Do not print the secret in a production environment - this
     # snippet is showing how to access the secret material.
     payload = response.payload.data.decode("UTF-8")
-    print("Plaintext: {}".format(payload))
+    return payload
+    #print("Plaintext: {}".format(payload))
 
 project_id = 544247596163
 secret_id = 'firebase-key'
 version_id = 1
 
-access_secret_version(project_id, secret_id, version_id)
+cert = access_secret_version(project_id, secret_id, version_id)
 
 # Initialize Flask app
 app = Flask(__name__)
 
 # Initialize Firestore DB
-cred = credentials.Certificate('key.json')
+cred = credentials.Certificate(cert)
 default_app = initialize_app(cred)
 db = firestore.client()
 todo_ref = db.collection('todos')
