@@ -1,173 +1,110 @@
-from flask import Flask, jsonify
-from flask import abort
-from flask import make_response
-from flask import request
-from flask_cors import CORS
+# app.py
 
+# Required imports
 import os
+from flask import Flask, request, jsonify
+from firebase_admin import credentials, firestore, initialize_app
 
-import sqlite3
-from sqlite3 import Error
+def access_secret_version(project_id, secret_id, version_id):
+    """
+    Access the payload for the given secret version if one exists. The version
+    can be a version number as a string (e.g. "5") or an alias (e.g. "latest").
+    """
 
-import pymysql.cursors
+    # Import the Secret Manager client library.
+    from google.cloud import secretmanager
 
+    # Create the Secret Manager client.
+    client = secretmanager.SecretManagerServiceClient()
+
+    # Build the resource name of the secret version.
+    name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
+
+    # Access the secret version.
+    response = client.access_secret_version(request={"name": name})
+
+    # Print the secret payload.
+    #
+    # WARNING: Do not print the secret in a production environment - this
+    # snippet is showing how to access the secret material.
+    payload = response.payload.data.decode("UTF-8")
+    print("Plaintext: {}".format(payload))
+
+project_id = 544247596163
+secret_id = 'firebase-key'
+version_id = 1
+
+access_secret_version(project_id, secret_id, version_id)
+
+# Initialize Flask app
 app = Flask(__name__)
-CORS(app)
 
-#DB_PORT = os.getenv('DB_PORT')
-#DB_HOST = os.getenv('DB_HOST')
-#DB_NAME = os.getenv('DB_NAME')
+# Initialize Firestore DB
+cred = credentials.Certificate('key.json')
+default_app = initialize_app(cred)
+db = firestore.client()
+todo_ref = db.collection('todos')
 
-class dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
-
-
-
-def create_db():
-
-    print("Db created.")
-
-
-
-def create_table(conn, create_table_sql):
-    print("table created.")
-
-def populate_initial_sensors(conn):
-    initial_sensors = [
-        {
-            'id': 1,
-            'name': u'Motion sensor 1',
-            'description': u'IR motion sensor in location x.', 
-            'active': 1
-        },
-        {
-            'id': 2,
-            'name': u'Accelerometer X',
-            'description': u'X-axis accelerometer.', 
-            'active': 0
-        },
-        {
-            'id': 3,
-            'name': u'Accelerometer Y',
-            'description': u'Y-axis accelerometer.', 
-            'active': 0
-        }
-    ]
-
+@app.route('/add', methods=['POST'])
+def create():
+    """
+        create() : Add document to Firestore collection with request body.
+        Ensure you pass a custom ID as part of json body in post request,
+        e.g. json={'id': '1', 'title': 'Write a blog post'}
+    """
     try:
+        id = request.json['id']
+        todo_ref.document(id).set(request.json)
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return f"An Error Occured: {e}"
 
-        for initial_sensor in initial_sensors:
+@app.route('/list', methods=['GET'])
+def read():
+    """
+        read() : Fetches documents from Firestore collection as JSON.
+        todo : Return document that matches query ID.
+        all_todos : Return all documents.
+    """
+    try:
+        # Check if ID was passed to URL query
+        todo_id = request.args.get('id')
+        if todo_id:
+            todo = todo_ref.document(todo_id).get()
+            return jsonify(todo.to_dict()), 200
+        else:
+            all_todos = [doc.to_dict() for doc in todo_ref.stream()]
+            return jsonify(all_todos), 200
+    except Exception as e:
+        return f"An Error Occured: {e}"
 
-            print("Populating initial data.")
+@app.route('/update', methods=['POST', 'PUT'])
+def update():
+    """
+        update() : Update document in Firestore collection with request body.
+        Ensure you pass a custom ID as part of json body in post request,
+        e.g. json={'id': '1', 'title': 'Write a blog post today'}
+    """
+    try:
+        id = request.json['id']
+        todo_ref.document(id).update(request.json)
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return f"An Error Occured: {e}"
 
-    except Error as e:
-        print(e)
+@app.route('/delete', methods=['GET', 'DELETE'])
+def delete():
+    """
+        delete() : Delete a document from Firestore collection.
+    """
+    try:
+        # Check for ID in URL query
+        todo_id = request.args.get('id')
+        todo_ref.document(todo_id).delete()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        return f"An Error Occured: {e}"
 
-# -- CRUD --
-# Create
-# Read
-# Update
-# Delete
-# -- CRUD --
-
-# Create a sensor
-@app.route('/api/v1/sensors', methods=['POST'])
-def create_sensor():
-    if not request.json or not 'name' in request.json:
-        abort(400)
-
-    sensor = dotdict({})
-    sensor.name = request.json['name']
-    sensor.description = request.json.get('description', "")
-    sensor.active = request.json['active']
-
-    # CREATE
-
-    data = (sensor.name, sensor.description, sensor.active)
-    
-    # TODO: Get last id.
-    print(f"Sensor: {sensor}")
-
-    return jsonify({'sensor': sensor}), 201
-
-# Read all sensors
-@app.route('/api/v1/sensors', methods=['GET'])
-def get_sensors():
-
-    # GET ALL SENSORS
-
-    # TODO: Get all sensors from db.
-    json_sensors = []
-
-    #for sensor in db_sensors:
-    #    sensor = dotdict(sensor)
-#
-    #    json_sensors.append(sensor)
-    return jsonify({'sensors': json_sensors})
-
-# Read a sensor
-@app.route('/api/v1/sensors/<int:sensor_id>', methods=['GET'])
-def get_sensor(sensor_id):
-
-    # TODO: Get the sensor from db.
-    #json_sensor = dotdict(db_sensor)
-#
-    #if len(db_sensor) == 0:
-    #    abort(404)
-
-    # GET A SENSOR
-    #return jsonify({'sensor': json_sensor})
-    return jsonify({'result': True})
-
-# Update a sensor
-@app.route('/api/v1/sensors/<int:sensor_id>', methods=['PUT'])
-def update_sensor(sensor_id):
-
-
-    # TODO: Get sensor then update it.
-    #db_sensor = cur.fetchone()
-    #db_sensor = dotdict(db_sensor)
-#
-    #new_sensor = dotdict(db_sensor)
-#
-    #if (db_sensor.name != request.json.get('name') and request.json.get('name')):
-    #    new_sensor.name = request.json.get('name')
-    #if (db_sensor.description != request.json.get('description') and request.json.get('description')):
-    #    new_sensor.description = request.json.get('description')
-    #if (db_sensor.active != request.json.get('active') and (request.json.get('active') == 1 or request.json.get('active') == 0)):
-    #    new_sensor.active = request.json.get('active')
-    #
-    #sql = ''' UPDATE sensors SET id = %s, name = %s, description = %s, active = %s WHERE id = %s'''
-#
-    #data = (sensor_id, new_sensor.name, new_sensor.description, new_sensor.active, sensor_id)
-    #
-    #cur.execute(sql, data)
-    #conn.commit()
-
-    #return jsonify({'sensor': new_sensor})
-    return({'result': True})
-
-# Delete a sensor
-@app.route('/api/v1/sensors/<int:sensor_id>', methods=['DELETE'])
-def delete_sensor(sensor_id):
-    # DELETE
-    #conn = create_connection()
-    #cur = conn.cursor()
-#
-    #cur.execute(f"DELETE FROM sensors WHERE id={sensor_id}")
-    #conn.commit()
-
-    #return jsonify({'result': True})
-    return({'result': True})
-
-# Error handling
-@app.errorhandler(404)
-def not_found(error):
-    return make_response(jsonify({'error': 'Not found'}), 404)
-
+port = int(os.environ.get('PORT', 8080))
 if __name__ == '__main__':
-    create_db()
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(threaded=True, host='0.0.0.0', port=port)
