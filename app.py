@@ -5,46 +5,33 @@ import os
 from flask import Flask, request, jsonify
 from firebase_admin import credentials, firestore, initialize_app
 
-def access_secret_version(project_id, secret_id, version_id):
-    """
-    Access the payload for the given secret version if one exists. The version
-    can be a version number as a string (e.g. "5") or an alias (e.g. "latest").
-    """
 
-    # Import the Secret Manager client library.
-    from google.cloud import secretmanager
 
-    # Create the Secret Manager client.
-    client = secretmanager.SecretManagerServiceClient()
+import firebase_admin
+from google.cloud import secretmanager
+from google.oauth2 import service_account
 
-    # Build the resource name of the secret version.
-    name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
+GOOGLE_CLOUD_PROJECT_NUMBER = 544247596163
+FIREBASE_SA_SECRET_NAME = 'firebase-key'
 
-    # Access the secret version.
-    response = client.access_secret_version(request={"name": name})
+# Create credentials object then initialize the firebase admin client
+sec_client = secretmanager.SecretManagerServiceClient()
+name = sec_client.secret_version_path(GOOGLE_CLOUD_PROJECT_NUMBER, FIREBASE_SA_SECRET_NAME, "latest")
+response = sec_client.access_secret_version(name)
+service_account_info = json.loads(response.payload.data.decode('utf-8'))
 
-    # Print the secret payload.
-    #
-    # WARNING: Do not print the secret in a production environment - this
-    # snippet is showing how to access the secret material.
-    payload = response.payload.data.decode("UTF-8")
-    return payload
-    #print("Plaintext: {}".format(payload))
+# build credentials with the service account dict
+creds = firebase_admin.credentials.Certificate(service_account_info)
 
-project_id = 544247596163
-secret_id = 'firebase-key'
-version_id = 1
+# initialize firebase admin
+firebase_app = firebase_admin.initialize_app(creds)
 
-cert = access_secret_version(project_id, secret_id, version_id)
+# Initialize Firestore DB
+db = firestore.client()
+todo_ref = db.collection('todos')
 
 # Initialize Flask app
 app = Flask(__name__)
-
-# Initialize Firestore DB
-cred = credentials.Certificate(cert)
-default_app = initialize_app(cred)
-db = firestore.client()
-todo_ref = db.collection('todos')
 
 @app.route('/add', methods=['POST'])
 def create():
